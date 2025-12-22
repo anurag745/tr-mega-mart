@@ -96,23 +96,28 @@ const [imagePreview, setImagePreview] = useState<string | null>(null);
 
 
   const uploadProductImage = async (file: File, productId: string) => {
-  const ext = file.name.split(".").pop();
-  const path = `inventory/${productId}.${ext}`;
+    // Upload image to Supabase Edge Function which uploads to Cloudflare R2 and returns a public URL
+    const edgeUrl = `${import.meta.env.VITE_SUPABASE_URL}/functions/v1/upload-to-r2`;
+    const form = new FormData();
+    form.append("file", file, file.name);
+    form.append("productId", productId);
 
-  const { error } = await supabase.storage
-    .from("product-images")
-    .upload(path, file, {
-      upsert: true,
-      contentType: file.type,
+    const res = await fetch(edgeUrl, {
+      method: "POST",
+      headers: {
+        Authorization: `Bearer ${import.meta.env.VITE_SUPABASE_PUBLISHABLE_KEY}`,
+      },
+      body: form,
     });
 
-  if (error) throw error;
+    if (!res.ok) {
+      const text = await res.text().catch(() => "");
+      throw new Error(`Edge function upload failed: ${res.status} ${text}`);
+    }
 
-  const { data } = supabase.storage
-    .from("product-images")
-    .getPublicUrl(path);
-
-  return data.publicUrl;
+    const json = await res.json();
+    // edge function returns { url: "..." }
+    return json.url || json.image_url || null;
 };
 
   const handleAddProduct = async () => {
