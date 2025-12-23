@@ -57,6 +57,8 @@ const Inventory = () => {
     unit: "pcs",
     price: 0,
     discount_price: null as number | null,
+    discount_percent: null as number | null,
+    quantity: "",
     barcode: "",
     image_url: "",
     stock: 0,
@@ -81,6 +83,8 @@ const [imagePreview, setImagePreview] = useState<string | null>(null);
     unit: "pcs",
     price: 0,
     discount_price: null as number | null,
+    discount_percent: null as number | null,
+    quantity: "",
     is_active: true,
     stock: 0,
     image_url: "",
@@ -138,6 +142,7 @@ const [imagePreview, setImagePreview] = useState<string | null>(null);
         unit: newProduct.unit,
         price: newProduct.price,
         discount_price: newProduct.discount_price,
+        quantity: newProduct.quantity ? newProduct.quantity : null,
         image_url: imageUrl,
         barcode: newProduct.barcode || null,
         is_active: true,
@@ -146,7 +151,7 @@ const [imagePreview, setImagePreview] = useState<string | null>(null);
       setImageFile(null);
       setImagePreview(null);
       setIsAddDialogOpen(false);
-      setNewProduct({ name: "", category_id: "", unit: "pcs", price: 0, discount_price: null, barcode: "", image_url: "", stock: 0 });
+      setNewProduct({ name: "", category_id: "", unit: "pcs", price: 0, discount_price: null, discount_percent: null, quantity: "", barcode: "", image_url: "", stock: 0 });
       toast({
         title: "Product added",
         description: "New product has been added to inventory.",
@@ -199,6 +204,20 @@ const [imagePreview, setImagePreview] = useState<string | null>(null);
   const getDiscountPercent = (product: typeof filteredProducts[0]) => {
     if (!product.price || !product.discount_price) return 0;
     return Math.round(((product.price - product.discount_price) / product.price) * 100);
+  };
+
+  // Calculate discounted price given price and percent (returns null if percent is null)
+  const calcDiscountPrice = (price: number, percent: number | null) => {
+    if (percent == null) return null;
+    const p = Math.max(0, Math.min(100, percent));
+    const val = price * (1 - p / 100);
+    return Math.round(val * 100) / 100; // round to 2 decimals
+  };
+
+  // Calculate percent given price and discount price (returns null if inputs invalid)
+  const calcDiscountPercent = (price: number, discountPrice: number | null) => {
+    if (!price || discountPrice == null) return null;
+    return Math.round(((price - discountPrice) / price) * 100);
   };
 
   // Barcode lookup state and function
@@ -399,7 +418,7 @@ const [imagePreview, setImagePreview] = useState<string | null>(null);
                     onChange={(e) => setNewProduct({ ...newProduct, image_url: e.target.value })}
                   />
                 </div>
-                <div className="grid grid-cols-2 gap-4">
+                <div className="grid grid-cols-3 gap-4">
                   <div className="grid gap-2">
                     <Label htmlFor="price">Price (₹)</Label>
                     <Input
@@ -407,7 +426,33 @@ const [imagePreview, setImagePreview] = useState<string | null>(null);
                       type="number"
                       placeholder="0.00"
                       value={newProduct.price || ""}
-                      onChange={(e) => setNewProduct({ ...newProduct, price: parseFloat(e.target.value) || 0 })}
+                      onChange={(e) => {
+                        const price = parseFloat(e.target.value) || 0;
+                        setNewProduct((p) => ({
+                          ...p,
+                          price,
+                          discount_price: p.discount_percent != null ? calcDiscountPrice(price, p.discount_percent) : p.discount_price,
+                        }));
+                      }}
+                    />
+                  </div>
+                  <div className="grid gap-2">
+                    <Label htmlFor="discount_percent">Discount (%)</Label>
+                    <Input
+                      id="discount_percent"
+                      type="number"
+                      min={0}
+                      max={100}
+                      placeholder="0"
+                      value={newProduct.discount_percent ?? ""}
+                      onChange={(e) => {
+                        const v = e.target.value === "" ? null : Math.max(0, Math.min(100, parseFloat(e.target.value)));
+                        setNewProduct((p) => ({
+                          ...p,
+                          discount_percent: v,
+                          discount_price: v != null ? calcDiscountPrice(p.price, v) : p.discount_price,
+                        }));
+                      }}
                     />
                   </div>
                   <div className="grid gap-2">
@@ -416,13 +461,20 @@ const [imagePreview, setImagePreview] = useState<string | null>(null);
                       id="discount"
                       type="number"
                       placeholder="0.00"
-                      value={newProduct.discount_price || ""}
-                      onChange={(e) => setNewProduct({ ...newProduct, discount_price: parseFloat(e.target.value) || null })}
+                      value={newProduct.discount_price ?? ""}
+                      onChange={(e) => {
+                        const dp = e.target.value === "" ? null : parseFloat(e.target.value) || null;
+                        setNewProduct((p) => ({
+                          ...p,
+                          discount_price: dp,
+                          discount_percent: dp != null && p.price > 0 ? calcDiscountPercent(p.price, dp) : p.discount_percent,
+                        }));
+                      }}
                     />
                   </div>
                 </div>
               </div>
-              <div className="grid grid-cols-2 gap-4">
+              <div className="grid grid-cols-3 gap-4">
                 <div className="grid gap-2">
                   <Label htmlFor="stock">Stock</Label>
                   <Input
@@ -431,6 +483,16 @@ const [imagePreview, setImagePreview] = useState<string | null>(null);
                     placeholder="0"
                     value={newProduct.stock ?? 0}
                     onChange={(e) => setNewProduct({ ...newProduct, stock: parseFloat(e.target.value) || 0 })}
+                  />
+                </div>
+                <div className="grid gap-2">
+                  <Label htmlFor="quantity">Quantity / Weight</Label>
+                  <Input
+                    id="quantity"
+                    type="text"
+                    placeholder="e.g. 500g, 1 kg, 500ml"
+                    value={newProduct.quantity ?? ""}
+                    onChange={(e) => setNewProduct({ ...newProduct, quantity: e.target.value })}
                   />
                 </div>
                 <div className="grid gap-2">
@@ -581,12 +643,15 @@ const [imagePreview, setImagePreview] = useState<string | null>(null);
                                 unit: product.unit ?? "pcs",
                                 price: product.price ?? 0,
                                 discount_price: product.discount_price ?? null,
+                                discount_percent: calcDiscountPercent(product.price ?? 0, product.discount_price ?? null),
+                                quantity: product.quantity ?? "",
                                 is_active: product.is_active ?? true,
-                                  stock: product.inventory?.[0]?.stock ?? 0,
-                                  image_url: product.image_url ?? "",
+                                // Prefer product.stock (if present) otherwise fall back to inventory relation
+                                stock: product.stock ?? product.inventory?.[0]?.stock ?? 0,
+                                image_url: product.image_url ?? "",
                               });
-                                setEditImagePreview(product.image_url ?? null);
-                                setEditImageFile(null);
+                              setEditImagePreview(product.image_url ?? null);
+                              setEditImageFile(null);
                               setIsEditDialogOpen(true);
                             }}
                           >
@@ -609,8 +674,10 @@ const [imagePreview, setImagePreview] = useState<string | null>(null);
                                     unit: product.unit ?? "pcs",
                                     price: product.price ?? 0,
                                     discount_price: product.discount_price ?? null,
+                                    discount_percent: calcDiscountPercent(product.price ?? 0, product.discount_price ?? null),
+                                    quantity: product.quantity ?? "",
                                     is_active: product.is_active ?? true,
-                                    stock: product.inventory?.[0]?.stock ?? 0,
+                                    stock: product.stock ?? product.inventory?.[0]?.stock ?? 0,
                                     image_url: product.image_url ?? "",
                                   });
                                   setEditImagePreview(product.image_url ?? null);
@@ -635,10 +702,15 @@ const [imagePreview, setImagePreview] = useState<string | null>(null);
 
                       <div className="flex items-center justify-between">
                         <div>
-                          <span className="text-lg font-bold text-foreground">
-                            ₹{product.discount_price ?? product.price ?? 0}
-                          </span>
-                          <span className="text-xs text-muted-foreground">/{product.unit}</span>
+                          <div className="flex items-baseline gap-2">
+                            <span className="text-lg font-bold text-foreground">
+                              ₹{product.discount_price ?? product.price ?? 0}
+                            </span>
+                            <span className="text-xs text-muted-foreground">/{product.unit}</span>
+                            {product.quantity && (
+                              <span className="ml-2 text-sm text-muted-foreground">· {product.quantity}</span>
+                            )}
+                          </div>
                         </div>
                         <div className="text-right">
                           <p className={cn(
@@ -759,7 +831,7 @@ const [imagePreview, setImagePreview] = useState<string | null>(null);
                 </Select>
               </div>
             </div>
-            <div className="grid grid-cols-2 gap-4">
+            <div className="grid grid-cols-3 gap-4">
               <div className="grid gap-2">
                 <Label htmlFor="edit-price">Price (₹)</Label>
                 <Input
@@ -767,7 +839,33 @@ const [imagePreview, setImagePreview] = useState<string | null>(null);
                   type="number"
                   placeholder="0.00"
                   value={editProduct.price || ""}
-                  onChange={(e) => setEditProduct({ ...editProduct, price: parseFloat(e.target.value) || 0 })}
+                  onChange={(e) => {
+                    const price = parseFloat(e.target.value) || 0;
+                    setEditProduct((p) => ({
+                      ...p,
+                      price,
+                      discount_price: p.discount_percent != null ? calcDiscountPrice(price, p.discount_percent) : p.discount_price,
+                    }));
+                  }}
+                />
+              </div>
+              <div className="grid gap-2">
+                <Label htmlFor="edit-discount_percent">Discount (%)</Label>
+                <Input
+                  id="edit-discount_percent"
+                  type="number"
+                  min={0}
+                  max={100}
+                  placeholder="0"
+                  value={editProduct.discount_percent ?? ""}
+                  onChange={(e) => {
+                    const v = e.target.value === "" ? null : Math.max(0, Math.min(100, parseFloat(e.target.value)));
+                    setEditProduct((p) => ({
+                      ...p,
+                      discount_percent: v,
+                      discount_price: v != null ? calcDiscountPrice(p.price, v) : p.discount_price,
+                    }));
+                  }}
                 />
               </div>
               <div className="grid gap-2">
@@ -777,19 +875,38 @@ const [imagePreview, setImagePreview] = useState<string | null>(null);
                   type="number"
                   placeholder="0.00"
                   value={editProduct.discount_price ?? ""}
-                  onChange={(e) => setEditProduct({ ...editProduct, discount_price: parseFloat(e.target.value) || null })}
+                  onChange={(e) => {
+                    const dp = e.target.value === "" ? null : parseFloat(e.target.value) || null;
+                    setEditProduct((p) => ({
+                      ...p,
+                      discount_price: dp,
+                      discount_percent: dp != null && p.price > 0 ? calcDiscountPercent(p.price, dp) : p.discount_percent,
+                    }));
+                  }}
                 />
               </div>
             </div>
-            <div className="grid gap-2">
-              <Label htmlFor="edit-stock">Stock</Label>
-              <Input
-                id="edit-stock"
-                type="number"
-                placeholder="0"
-                value={editProduct.stock ?? 0}
-                onChange={(e) => setEditProduct({ ...editProduct, stock: parseFloat(e.target.value) || 0 })}
-              />
+            <div className="grid grid-cols-2 gap-4">
+              <div className="grid gap-2">
+                <Label htmlFor="edit-stock">Stock</Label>
+                <Input
+                  id="edit-stock"
+                  type="number"
+                  placeholder="0"
+                  value={editProduct.stock ?? 0}
+                  onChange={(e) => setEditProduct({ ...editProduct, stock: parseFloat(e.target.value) || 0 })}
+                />
+              </div>
+              <div className="grid gap-2">
+                <Label htmlFor="edit-quantity">Quantity / Weight</Label>
+                <Input
+                  id="edit-quantity"
+                  type="text"
+                  placeholder="e.g. 500g, 1 kg, 500ml"
+                  value={editProduct.quantity ?? ""}
+                  onChange={(e) => setEditProduct({ ...editProduct, quantity: e.target.value })}
+                />
+              </div>
             </div>
           </div>
           <DialogFooter>
@@ -811,6 +928,7 @@ const [imagePreview, setImagePreview] = useState<string | null>(null);
                     unit: editProduct.unit,
                     price: editProduct.price,
                     discount_price: editProduct.discount_price,
+                    quantity: editProduct.quantity ? editProduct.quantity : null,
                     image_url: imageUrl,
                     is_active: editProduct.is_active,
                     stock: editProduct.stock ?? 0,
